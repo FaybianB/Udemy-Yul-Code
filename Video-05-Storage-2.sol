@@ -27,7 +27,12 @@ contract StoragePart1 {
     // function arguments are always 32 bytes long under the hood
     function writeToE(uint16 newE) external {
         assembly {
-            // newE = 0x000000000000000000000000000000000000000000000000000000000000000a
+            /*
+             * Even though the parameter is specified as a uint16, Yul is going to treat it as
+             * a 256-bit value and interpret it as:
+             * 
+             * newE = 0x000000000000000000000000000000000000000000000000000000000000000a
+             */
             let c := sload(E.slot) // slot 0
             // c = 0x0000010800000000000000000000000600000000000000000000000000000004
             let clearedE := and(
@@ -50,6 +55,11 @@ contract StoragePart1 {
     function getOffsetE() external pure returns (uint256 slot, uint256 offset) {
         assembly {
             slot := E.slot
+            // The offset tells us at which position in the slot we can find the value for the variable
+            /* 
+             * For example, the return here is 28... that translates to "If you read 28 bytes to the left
+             * (starting at the end of the bytecode) you can find the variable"
+             */
             offset := E.offset
         }
     }
@@ -57,8 +67,16 @@ contract StoragePart1 {
     function readE() external view returns (uint256 e) {
         assembly {
             let value := sload(E.slot) // must load in 32 byte increments
-            //
             // E.offset = 28
+            /* 
+             * NOTE: offset() returns the number of bytes to shift the bytecode in order to locate the variable
+             * data, however, shr() expects bits so we multiply the offset x 8 (number of bits in a byte)
+            */
+            /*
+             * Before the shift right operation, the slot looks like this:
+             *
+             * 0x0001000800000000000000000000000600000000000000000000000000000004
+            */
             let shifted := shr(mul(E.offset, 8), value)
             // 0x0000000000000000000000000000000000000000000000000000000000010008
             // equivalent to
@@ -73,12 +91,13 @@ contract StoragePart1 {
             let offset := sload(E.offset)
             let value := sload(E.slot) // must load in 32 byte increments
 
-            // shift right by 224 = divide by (2 ** 224). below is 2 ** 224 in hex
+            // NOTE: This is equivalent to shr() but it's less efficient because it costs more gas
+            // shift right by 224 (28 bytes) = divide by (2 ** 224). below is 2 ** 224 in hex
             let shifted := div(
                 value,
                 0x100000000000000000000000000000000000000000000000000000000
             )
-            e := and(0xffffffff, shifted)
+            e := and(0xffff, shifted)
         }
     }
 }

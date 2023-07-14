@@ -5,6 +5,14 @@ contract IsPrime {
     function isPrime(uint256 x) public pure returns (bool p) {
         p = true;
         assembly {
+            /*
+             *  The following statement is representatative of:
+             *
+             *  uint256 halfX = x / 2 + 1
+             */
+             
+             // Yul writes mathematical operations (and pretty much everything) in the form of a function
+             // There isn't a notion of an order of operations... The division happens first because it's the innermost function
             let halfX := add(div(x, 2), 1)
             let i := 2
             for {
@@ -45,6 +53,7 @@ contract IfComparison {
     }
 
     function isFalsy() external pure returns (uint256 result) {
+        // NOTE: Falsy values in Yul are when all of the bits inside a 32-byte word is 0
         result = 1;
         assembly {
             if 0 {
@@ -69,6 +78,8 @@ contract IfComparison {
     function unsafe1NegationPart1() external pure returns (uint256 result) {
         result = 1;
         assembly {
+            // Generally, in Yul, when trying to negate something, should avoid using not()...
+            // Although, this specific example will work as expected because not(0) is TRUE...
             if not(0) {
                 result := 2
             }
@@ -79,6 +90,16 @@ contract IfComparison {
 
     function bitFlip() external pure returns (bytes32 result) {
         assembly {
+            /*
+             * When using not() on a value that is not 0, it's going to flip all of the bits and return a non-zero value...
+             * For example, the result of the following code is:
+             *
+             * 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd
+             *
+             * This is the result of flipping all of the bits in the 32-byte hexadecimal representation of 2 which is:
+             *
+             * 0x0000000000000000000000000000000000000000000000000000000000000002
+             */
             result := not(2)
         }
     }
@@ -111,13 +132,13 @@ contract IfComparison {
                 maximum := y
             }
             if iszero(lt(x, y)) {
-                // there are no else statements
+                // NOTE: There is no ELSE in Yul, so we have to explicitly check the else scenarios with another IF statement...
                 maximum := x
             }
         }
     }
 
-    // The rest:
+    // The rest (These are ALWAYS bitwise operations and operations on 32-byte words):
     /*
         | solidity | YUL       |
         +----------+-----------+
