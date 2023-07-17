@@ -13,6 +13,7 @@ object "Simple" {
             return(0x00, datasize("Message"))
         }
 
+        // Stores the string into the contract with the marker "Message"
         data "Message" "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt"
     }
 }

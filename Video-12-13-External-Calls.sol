@@ -1,6 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.8.17;
 
+// NOTE: Tx.data can be arbitrary (only constrained by gas cost)
+// The longer the Tx.data array, the more the user pays to send the transaction
+/*
+ * Convention
+ *
+ * - Solidity's dominance has forced a convention on how tx.data is used
+ * - When sending to a wallet, you don't put any data in unless you are trying
+ *   to send that person a message (hackers have used this field for taunts)
+ * - When sending to a smart contract, the first four bytes specify which function
+ *   you are calling, and the bytes that follow are the abi.encoded function arguments
+ * - Solidity expects the bytes after the function selector to always be a multiple of
+ *   32 in length, but this is convention.
+ * - If you send more bytes, Solidity will ignore them.
+ * - But a Yul smart contract can be programmed to respond to any arbitrary length tx.data
+ *   in an arbitrary manner
+ */
+/*
+ * Overview
+ *
+ * - Function selectors are the first four bytes of the keccak256 of the function selector
+ * - balanceOf(address _address) -> keccak256("balanceOf(address)") -> 0x70a08231
+ * - balanceOf(0x5B38Da6a701c568545dCfcB03FcB875f56beddC4) -> 0x70a082310000000000000000000000005B38Da6a701c568545dCfcB03FcB875f56beddC4
+ * - balanceOf(address _address, uint256) -> keccak256("balanceOf(address,uint256)") -> 0x00fdd58e
+ * - The result of abi.encode() is always a multiple of 32 bytes
+ * - balanceOf(0x5B38Da6a701c568545dCfcB03FcB875f56beddC4, 5) -> 0x00fdd58e0000000000000000000000005B38Da6a701c568545dCfcB03FcB875f56beddC40000000000000000000000000000000000000000000000000000000000000005
+ * - The above example features a uint256 as the second argument but even if the uint was another size, like uint8, the abi.encoded value will always be 32-bytes, thus, it would be the same
+ */ 
+/*
+ * ABI Specification
+ *
+ * - Front-end apps know to format the transaction based on the abi specification of the contract
+ * - In Solidity, the function selector and 32-byte arguments are created under the hood by interfaces or if you use abi.encodeWithSignature("balanceOf(address)", 0x...)
+ * - But in Yul, you have to be explicit
+ * - It doesn't know about function selectors, interfaces or abi encoding
+ * - If you want to make an external call to a Solidity contract, you implement all of that yourself
+ */
 contract OtherContract {
     // "0c55699c": "x()"
     uint256 public x;
@@ -17,6 +53,7 @@ contract OtherContract {
     function revertWith999() external pure returns (uint256) {
         assembly {
             mstore(0x00, 999)
+            // This behaves the same way as "return", since this memory location is populated with data (999)
             revert(0x00, 0x20)
         }
     }
@@ -49,6 +86,7 @@ contract OtherContract {
         return ret;
     }
 
+    // Think about how to abi.encode() when a function takes variable length arguments and specifically more than one
     // exercise for the reader #1
     function multipleVariableLength(
         uint256[] calldata data1,
@@ -97,6 +135,12 @@ contract ExternalCalls {
             // 000000000000000000000000000000000000000000000000000000009a884bde
             //                                                         |       |
             //                                                         28      32
+            /*
+             * staticcall(g, a, in, insize, out, outsize) - calls contract at address
+             * (a) while guaranteeing no state changes. The input is memory from (in) to
+             * (in + insize) providing g gas and output area memory from (out) to (out + outsize)
+             * returning 0 on error (eg. out of gas) and 1 on success.
+             */
             let success := staticcall(gas(), _a, 28, 32, 0x00, 0x20)
             if iszero(success) {
                 revert(0, 0)
@@ -108,6 +152,7 @@ contract ExternalCalls {
     function getViaRevert(address _a) external view returns (uint256) {
         assembly {
             mstore(0x00, 0x73712595)
+            // We don't care about the return value of the staticcall so pop() it off the stack
             pop(staticcall(gas(), _a, 28, 32, 0x00, 0x20))
             return(0x00, 0x20)
         }
@@ -123,11 +168,13 @@ contract ExternalCalls {
             mstore(0x40, add(mptr, 0x60)) // advance the memory pointer 3 x 32 bytes
             //  00000000000000000000000000000000000000000000000000000000196e6d84
             //  0000000000000000000000000000000000000000000000000000000000000003
-            //  000000000000000000000000000000000000000000000000000000000000000b
+            //  000000000000000000000000000000000000000000000000000000000000000b|<- (free memory pointer is here - after the b)
             let success := staticcall(
                 gas(),
                 _a,
+                // The free memory pointer looks at the beginning of the 32-bytes so we add 28 to it, so it starts reading the first 4 bytes
                 add(oldMptr, 28),
+                // Since the memory pointer was updated after the function arguments were stored, load the free memory pointer index to know where to stop reading
                 mload(0x40),
                 0x00,
                 0x20
@@ -151,6 +198,8 @@ contract ExternalCalls {
             let success := call(
                 gas(),
                 _a,
+                // Used to forward the ethereum associated with this call
+                // Since this specific function is not "payable", this could be hardcoded to 0 and it'd be more efficient
                 callvalue(),
                 28,
                 add(28, 32),
@@ -177,6 +226,8 @@ contract ExternalCalls {
                 revert(0, 0)
             }
 
+            // returndatasize() - returns the size of the return data of the last call.
+            // returndatacopy(t, f, s) - copies s bytes from the return data from stack to memory, starting from position f and writes it to memory at position t.
             returndatacopy(0, 0, returndatasize())
             return(0, returndatasize())
         }
