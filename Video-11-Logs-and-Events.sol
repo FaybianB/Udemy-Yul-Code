@@ -4,6 +4,7 @@ pragma solidity 0.8.17;
 contract Log {
     event SomeLog(uint256 indexed a, uint256 indexed b);
     event SomeLogV2(uint256 indexed a, bool);
+    event SomeLogV3(uint256[] a, uint256[] b);
 
     function emitLog() external {
         emit SomeLog(5, 6);
@@ -57,6 +58,21 @@ contract Log {
             mstore(0x00, 1)
             // Since bool is not indexed, we specify where in memory we find it's value and it's number of bytes (0x20 = 32)
             log2(0, 0x20, signature, 5)
+        }
+    }
+
+    function v3YulEmitLog() external {
+        assembly {
+            let signature := 0x9d3a01189f186eed5f1f1326d8e4b1d74107d7e987d545a27638e7efe98c961c
+
+            mstore(0x00, 0x40)
+            mstore(0x20, 0x80)
+            mstore(0x40, 1)
+            mstore(0x60, 99)
+            mstore(0x80, 1)
+            mstore(0xa0, 25)
+
+            log1(0x00, msize(), signature)
         }
     }
 
